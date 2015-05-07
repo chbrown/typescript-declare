@@ -1,0 +1,22 @@
+{
+  "name": "typescript-declare",
+  "description": "Compile a TypeScript package into a single index.js file (with accompanying *.d.ts)",
+  "keywords": [
+    "TypeScript",
+    "type",
+    "declaration",
+    "compiler"
+  ],
+  "version": "0.1.0",
+  "homepage": "https://github.com/chbrown/typescript-declare",
+  "repository": "git://github.com/chbrown/typescript-declare.git",
+  "author": "Christopher Brown <io@henrian.com> (http://henrian.com)",
+  "license": "MIT",
+  "dependencies": {
+    "typescript": "*",
+    "yargs": "*"
+  },
+  "bin": {
+    "tsc-declare": "bin/tsc-declare"
+  }
+}
