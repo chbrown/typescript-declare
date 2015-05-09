@@ -7,7 +7,7 @@
     "declaration",
     "compiler"
   ],
-  "version": "0.2.0",
+  "version": "0.2.1",
   "homepage": "https://github.com/chbrown/typescript-declare",
   "repository": "git://github.com/chbrown/typescript-declare.git",
   "author": "Christopher Brown <io@henrian.com> (http://henrian.com)",
