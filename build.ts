@@ -1,18 +1,18 @@
 /// <reference path="type_declarations/DefinitelyTyped/node/node.d.ts" />
 import fs = require('fs');
+import path = require('path');
 import child_process = require('child_process');
+
+var tsc_filepath = path.join(__dirname, 'node_modules/.bin/tsc');
 
 export function generateTypeDeclaration(name: string, config: any) {
   var root = new SourceTreeRootModule(name);
   buildSourceTree(config, root);
 
   fs.writeFileSync('index.ts', root.toString(), {encoding: 'utf8'});
-  child_process.execSync('tsc -m commonjs -t ES5 -d index.ts');
-  console.error('compiled index.js')
+  child_process.execSync(`${tsc_filepath} -m commonjs -t ES5 -d index.ts`);
 
-  // okay, now that we've build index.d.ts and index.js,
-  // we don't need index.ts any longer
-  fs.unlinkSync('index.ts');
+  console.error('compiled index.js')
 
   var index_d_ts = fs.readFileSync('index.d.ts', {encoding: 'utf8'});
   var name_d_ts = index_d_ts
@@ -20,14 +20,16 @@ export function generateTypeDeclaration(name: string, config: any) {
     .replace(`declare module ${name}`, `declare module "${name}"`)
     // remove the export at the very bottom
     .replace(`export = ${name};\n`, '');
-
-  // we've effectively moved index.d.ts to <name>.d.ts, with some changes,
-  // so we can delete the original index.d.ts
-  fs.unlinkSync('index.d.ts');
-
   // finally, write the main type declarations
   fs.writeFileSync(`${name}.d.ts`, name_d_ts, {encoding: 'utf8'});
   console.error(`wrote ${name}.d.ts`);
+
+  // clean up
+  // we've built index.d.ts and index.js, so we don't need index.ts
+  fs.unlinkSync('index.ts');
+  // and we've effectively moved index.d.ts to <name>.d.ts, with some changes,
+  // so we can delete the original index.d.ts
+  fs.unlinkSync('index.d.ts');
 }
 
 const referenceRegExp = /^\/\/\/\s*<reference\s*path=(['"])([^\1]+)\1\s*\/>\s*$/;
