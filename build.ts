@@ -6,10 +6,13 @@ import child_process = require('child_process');
 var tsc_filepath = path.join(__dirname, 'node_modules/.bin/tsc');
 
 export function generateTypeDeclaration(name: string, config: any) {
-  var root = new SourceTreeRootModule(name);
+  var root = new TypeScriptRootModule(name);
   buildSourceTree(config, root);
 
-  fs.writeFileSync('index.ts', root.toString(), {encoding: 'utf8'});
+  // move references and external imports to the root module; strip relative imports
+  root.children.forEach(source => percolateSourceTree(source, root));
+
+  fs.writeFileSync('index.ts', root.toLines().join('\n'), {encoding: 'utf8'});
   child_process.execFile(tsc_filepath, ['-m', 'commonjs', '-t', 'ES5', '-d', 'index.ts'], (error, stdout, stderr) => {
     if (error) {
       console.log(stdout);
@@ -38,8 +41,9 @@ export function generateTypeDeclaration(name: string, config: any) {
   });
 }
 
-const referenceRegExp = /^\/\/\/\s*<reference\s*path=(['"])([^\1]+)\1\s*\/>\s*$/;
-const requirementRegExp = /^(var|import)\s*(\w+)\s*=\s*require\((['"])([^\3]+)\3\);$/;
+function pushAll<T>(array: T[], items: T[]): void {
+  return Array.prototype.push.apply(array, items);
+}
 
 function flatten<T>(arrays: T[][]): T[] {
   return Array.prototype.concat.apply([], arrays);
@@ -49,52 +53,60 @@ function indent(lines: string[], prefix = '  '): string[] {
   return lines.map(line => '  ' + line);
 }
 
-function buildSourceTree(config: any, parent: SourceTreeModule) {
+function buildSourceTree(config: any, parent: TypeScriptSourceModule) {
   for (var module_name in config) {
     // create module container
-    var source_tree_module = new SourceTreeModule(module_name);
+    var source_module = new TypeScriptSourceModule(module_name);
     // add it to the provided parent
-    parent.children.push(source_tree_module);
+    parent.children.push(source_module);
     // recurse on object values, terminate on string values
     var module_value = config[module_name];
     if (typeof module_value === 'string') {
       var filename = module_value + '.ts';
-      var source = TypeScriptSource.readFileSync(filename);
-      // strip relative imports
-      source.requirements = source.requirements.filter(requirement => requirement.path[0] !== '.');
-      source_tree_module.children.push(source);
+      var source = readSourceCodeSync(filename);
+      source_module.children.push(source);
     }
     else {
-      buildSourceTree(module_value, source_tree_module);
+      buildSourceTree(module_value, source_module);
     }
   }
 }
 
-class SourceTreeModule {
-  constructor(public name: string, public children: {toLines(): string[]}[] = []) { }
-  toLines(): string[] {
-    return flatten([
-      [`export module ${this.name} {`],
-        indent(flatten(this.children.map(child => child.toLines()))),
-      [`}`],
-    ]);
-  }
-  toString(): string {
-    return this.toLines().join('\n');
-  }
-}
-
-class SourceTreeRootModule extends SourceTreeModule {
-  toLines(): string[] {
-    return flatten([
-      [`module ${this.name} {`],
-        indent(flatten(this.children.map(child => child.toLines()))),
-      [`}`],
-      [`export = ${this.name};`],
-    ]);
+function percolateSourceTree(source: TypeScriptSource | TypeScriptSourceModule, root: TypeScriptRootModule) {
+  // filter out relative imports
+  var requirements = source.requirements.filter(requirement => requirement.path[0] !== '.');
+  // move remaining (external) imports to the root module
+  pushAll(root.requirements, requirements);
+  source.requirements = [];
+  // move references to the root module
+  pushAll(root.references, source.references);
+  source.references = [];
+  // recurse
+  if (source instanceof TypeScriptSourceModule) {
+     source.children.forEach(source => percolateSourceTree(source, root));
   }
 }
 
+const referenceRegExp = /^\/\/\/\s*<reference\s*path=(['"])([^\1]+)\1\s*\/>\s*$/;
+const requirementRegExp = /^(var|import)\s*(\w+)\s*=\s*require\((['"])([^\3]+)\3\);$/;
+function readSourceCodeSync(filename: string): TypeScriptSourceCode {
+  var source = new TypeScriptSourceCode();
+
+  fs.readFileSync(filename, {encoding: 'utf8'}).split(/\n/).forEach(line => {
+    var match: RegExpMatchArray;
+    if (match = line.match(referenceRegExp)) {
+      source.references.push(match[2]);
+    }
+    else if (match = line.match(requirementRegExp)) {
+      source.requirements.push({type: match[1], name: match[2], path: match[4]});
+    }
+    else {
+      source.lines.push(line);
+    }
+  });
+
+  return source;
+}
 
 interface Requirement {
   type: string; // 'var' or 'import'
@@ -107,33 +119,51 @@ references: an array of the reference paths
 */
 class TypeScriptSource {
   constructor(public references: string[] = [],
-              public requirements: Requirement[] = [],
-              public lines: string[] = []) { }
+              public requirements: Requirement[] = []) { }
 
   toLines(): string[] {
     return flatten([
       this.references.map(reference => `/// <reference path="${reference}" />`),
       this.requirements.map(requirement => `${requirement.type} ${requirement.name} = require('${requirement.path}');`),
+    ]);
+  }
+}
+
+class TypeScriptSourceCode extends TypeScriptSource {
+  constructor(public lines: string[] = []) { super() }
+
+  toLines(): string[] {
+    return flatten([
+      super.toLines(),
       this.lines,
     ]);
   }
+}
 
-  static readFileSync(filename: string): TypeScriptSource {
-    var source = new TypeScriptSource();
 
-    fs.readFileSync(filename, {encoding: 'utf8'}).split(/\n/).forEach(line => {
-      var match: RegExpMatchArray;
-      if (match = line.match(referenceRegExp)) {
-        source.references.push(match[2]);
-      }
-      else if (match = line.match(requirementRegExp)) {
-        source.requirements.push({type: match[1], name: match[2], path: match[4]});
-      }
-      else {
-        source.lines.push(line);
-      }
-    });
+class TypeScriptSourceModule extends TypeScriptSource {
+  constructor(public name: string, public children: TypeScriptSource[] = []) { super() }
 
-    return source;
+  toLines(): string[] {
+    return flatten([
+      super.toLines(),
+      [`export module ${this.name} {`],
+        indent(flatten(this.children.map(child => child.toLines()))),
+      [`}`],
+    ]);
+  }
+}
+
+class TypeScriptRootModule extends TypeScriptSource {
+  constructor(public name: string, public children: TypeScriptSource[] = []) { super() }
+
+  toLines(): string[] {
+    return flatten([
+      super.toLines(),
+      [`module ${this.name} {`],
+        indent(flatten(this.children.map(child => child.toLines()))),
+      [`}`],
+      [`export = ${this.name};`],
+    ]);
   }
 }
