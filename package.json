@@ -1,6 +1,6 @@
 {
   "name": "typescript-declare",
-  "description": "Compile a TypeScript package into a single index.js file (with accompanying *.d.ts)",
+  "description": "Deprecated. (Was previously used to bundle together multiple modules into a single commonjs-like declaration file.)",
   "keywords": [
     "TypeScript",
     "type",
@@ -11,12 +11,5 @@
   "homepage": "https://github.com/chbrown/typescript-declare",
   "repository": "git://github.com/chbrown/typescript-declare.git",
   "author": "Christopher Brown <io@henrian.com> (http://henrian.com)",
-  "license": "MIT",
-  "dependencies": {
-    "typescript": "*",
-    "yargs": "*"
-  },
-  "bin": {
-    "tsc-declare": "bin/tsc-declare"
-  }
+  "license": "MIT"
 }
